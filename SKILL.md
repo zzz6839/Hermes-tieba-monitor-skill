@@ -25,7 +25,8 @@ metadata:
 | 参数 | 说明 | 必填 |
 |------|------|------|
 | `forum_name` | 贴吧名（如 `LOL台服`、`原神`） | ✅ |
-| `filterout_keywords` | 过滤关键词列表（标题含任意一个则跳过），用逗号分隔 | ✅ |
+| `filterout_keywords` | 过滤关键词（标题含任意一个则跳过），用逗号分隔 | ✅ |
+| `filter_keywords` | 筛选关键词（标题含任意一个才推送），用逗号分隔（可选，不填则推送全部） | ❌ |
 | `schedule` | Cron 表达式，默认 `37 10,22 * * *`（每天10:37和22:37） | ❌ |
 | `delivery` | 推送目标，默认 `origin`（回到当前对话） | ❌ |
 
@@ -45,13 +46,20 @@ Hermes-tieba-monitor-skill/scripts/tieba_monitor.py
 | 参数 | 说明 |
 |------|------|
 | `--forum` | 贴吧名称（必填） |
-| `--filter` | 过滤关键词，逗号分隔（可选，默认不过滤） |
+| `--filterout` | 过滤关键词，逗号分隔（标题含这些词→跳过） |
+| `--filter` | 筛选关键词，逗号分隔（标题含这些词→推送，不填则推送全部） |
 | `--cache` | 缓存文件路径（可选，默认 ~/.cron/state/tieba_<forum>_last_tid.txt） |
 
 示例命令：
 ```bash
-python3 scripts/tieba_monitor.py --forum LOL台服 --filter 收一个,私聊,收个
-python3 scripts/tieba_monitor.py --forum 原神 --filter 收一个,私聊
+# filterout 模式：过滤掉含关键词的帖子，推送其余
+python3 scripts/tieba_monitor.py --forum LOL台服 --filterout 收一个,私聊,收个
+
+# filter 模式：只推送含关键词的帖子
+python3 scripts/tieba_monitor.py --forum LOL台服 --filter 轮换,换肤
+
+# 两者结合：只推送含"轮换"且不含"收一个"的帖子
+python3 scripts/tieba_monitor.py --forum LOL台服 --filter 轮换 --filterout 收一个
 ```
 
 ### 第三步：创建 Cronjob
@@ -61,7 +69,7 @@ python3 scripts/tieba_monitor.py --forum 原神 --filter 收一个,私聊
 - **script**: `scripts/tieba_monitor.py`
 - **prompt**（供 no_agent=false 时用）：
   ```
-  运行 /opt/data/scripts/tieba_monitor.py --forum {forum_name} --filter {filterout_keywords}
+  运行 /opt/data/scripts/tieba_monitor.py --forum {forum_name} --filterout {filterout_keywords}
   ```
 - **schedule**: 用户提供的 schedule，默认 `37 10,22 * * *`
 - **deliver**: `origin`

@@ -5,11 +5,18 @@
 配合 aiotieba 库使用，通过 cronjob 定时抓取任意百度贴吧新帖。
 
 用法：
+    # filterout 模式：过滤掉含关键词的帖子，只推送剩余帖子
+    python3 tieba_monitor.py --forum <吧名> --filterout <关键词1,关键词2,...>
+
+    # filter 模式：只推送含关键词的帖子
     python3 tieba_monitor.py --forum <吧名> --filter <关键词1,关键词2,...>
 
 示例：
-    python3 tieba_monitor.py --forum LOL台服 --filter 收一个,私聊,收个
-    python3 tieba_monitor.py --forum 原神 --filter 收一个,私聊
+    # 过滤掉"收一个""私聊""收个"，推送其他新帖
+    python3 tieba_monitor.py --forum LOL台服 --filterout 收一个,私聊,收个
+
+    # 只推送含"轮换"或"换肤"的帖子
+    python3 tieba_monitor.py --forum LOL台服 --filter 轮换,换肤
 
 依赖：
     pip install aiotieba
@@ -32,22 +39,45 @@ if _VENV_SITE not in sys.path:
 
 # ── CLI 参数解析 ──────────────────────────────────────────────────
 parser = argparse.ArgumentParser(description="贴吧通用监控脚本")
-parser.add_argument("--forum",  required=True, help="贴吧名称（如 LOL台服、原神）")
-parser.add_argument("--filter", default="",     help="过滤关键词，逗号分隔（如 收一个,私聊）")
-parser.add_argument("--cache",  default="",     help="缓存文件路径（默认：~/.cron/state/tieba_<forum>_last_tid.txt）")
+parser.add_argument("--forum",      required=True, help="贴吧名称（如 LOL台服、原神）")
+parser.add_argument("--filterout",  default="",     help="过滤关键词（命中→跳过），逗号分隔")
+parser.add_argument("--filter",     default="",      help="筛选关键词（命中→推送），逗号分隔")
+parser.add_argument("--cache",      default="",      help="缓存文件路径（默认：~/.cron/state/tieba_<forum>_last_tid.txt）")
 args = parser.parse_args()
 
 FORUM_NAME = args.forum.strip()
-FILTEROUT_KEYWORDS = [kw.strip() for kw in args.filter.split(",") if kw.strip()]
+
+# filterout：命中关键词 → 跳过（推送剩余）
+FILTEROUT_KW = [kw.strip() for kw in args.filterout.split(",") if kw.strip()]
+# filter：命中关键词 → 推送（跳过其余）
+FILTER_KW    = [kw.strip() for kw in args.filter.split(",")    if kw.strip()]
 
 CACHE_FILE = args.cache or os.path.expanduser(f"~/.cron/state/tieba_{FORUM_NAME}_last_tid.txt")
 
 # ── 过滤函数 ─────────────────────────────────────────────────────
 def is_filtered(title: str) -> bool:
-    for kw in FILTEROUT_KEYWORDS:
+    """filterout 模式：含关键词 → 跳过"""
+    for kw in FILTEROUT_KW:
         if kw in title:
             return True
     return False
+
+def is_matched(title: str) -> bool:
+    """filter 模式：含关键词 → 推送；无关键词参数 → 全部推送"""
+    if not FILTER_KW:
+        return True   # 无 filter 参数，全部推送
+    for kw in FILTER_KW:
+        if kw in title:
+            return True
+    return False
+
+def should_push(title: str) -> bool:
+    """综合判断：满足 filterout（不含）且满足 filter（含）→ 推送"""
+    if not is_matched(title):
+        return False
+    if is_filtered(title):
+        return False
+    return True
 
 # ── 缓存读写 ─────────────────────────────────────────────────────
 def load_last_tid() -> int | None:
@@ -106,8 +136,8 @@ async def main():
     if not new_posts:
         return
 
-    # 按 filterout 关键词过滤
-    filtered_posts = [t for t in new_posts if not is_filtered(t.text or "")]
+    # 按 filterout / filter 关键词过滤
+    filtered_posts = [t for t in new_posts if should_push(t.text or "")]
     if not filtered_posts:
         return
 
