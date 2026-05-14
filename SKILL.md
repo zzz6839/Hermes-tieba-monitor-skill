@@ -10,7 +10,10 @@ metadata:
 
 # 贴吧监控 (Tieba Monitor)
 
+通用贴吧监控 skill，配合 `scripts/tieba_monitor.py` 脚本工作。
+
 ## 何时使用
+
 用户要求监控某个百度贴吧（新帖推送、关键词过滤）时使用。
 
 ## 工作流程
@@ -31,101 +34,35 @@ metadata:
 
 ### 第二步：生成监控脚本
 
-在 `/opt/data/scripts/` 目录下创建 `tieba_<forum_name>.py`：
+脚本已模板化，位于仓库 `scripts/tieba_monitor.py`，使用时直接引用：
 
-```python
-#!/opt/data/hermes-aiotieba-venv/bin/python3
-# -*- coding: utf-8 -*-
-"""
-{forum_name} 贴吧监控
-"""
+```
+Hermes-tieba-monitor-skill/scripts/tieba_monitor.py
+```
 
-import asyncio, os, sys
+脚本接受以下参数：
 
-_venv_site = "/opt/data/hermes-aiotieba-venv/lib/python3.13/site-packages"
-if _venv_site not in sys.path:
-    sys.path.insert(0, _venv_site)
+| 参数 | 说明 |
+|------|------|
+| `--forum` | 贴吧名称（必填） |
+| `--filter` | 过滤关键词，逗号分隔（可选，默认不过滤） |
+| `--cache` | 缓存文件路径（可选，默认 ~/.cron/state/tieba_<forum>_last_tid.txt） |
 
-CACHE_FILE = "/opt/data/./cron/state/tieba_{forum_name}_last_tid.txt"
-
-FILTEROUT_KEYWORDS = [
-{items}
-]
-
-def is_filtered(title: str) -> bool:
-    for kw in FILTEROUT_KEYWORDS:
-        if kw in title:
-            return True
-    return False
-
-def load_last_tid() -> int | None:
-    try:
-        with open(CACHE_FILE, "r") as f:
-            content = f.read().strip()
-            return int(content) if content else None
-    except (FileNotFoundError, ValueError):
-        return None
-
-def save_last_tid(tid: int):
-    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-    with open(CACHE_FILE, "w") as f:
-        f.write(str(tid))
-
-def format_post(thread) -> str:
-    title = thread.text[:60].replace("\n", " ").strip() if thread.text else "(无标题)"
-    url = f"https://tieba.baidu.com/p/{thread.tid}"
-    return f"📌 {title}\n🔗 {url}"
-
-async def main():
-    last_tid = load_last_tid()
-
-    try:
-        import aiotieba
-        async with aiotieba.Client() as client:
-            threads = await client.get_threads(
-                "{forum_name}",
-                pn=1,
-                rn=20,
-                sort=aiotieba.ThreadSortType.CREATE,
-            )
-            thread_list = list(threads)
-    except Exception as e:
-        print(f"API_ERROR: {{e}}", file=sys.stderr)
-        sys.exit(1)
-    finally:
-        import gc; gc.collect()
-
-    new_threads = [t for t in thread_list if not t.is_top and not t.is_good]
-    if not new_threads:
-        return
-
-    latest_tid = new_threads[0].tid
-    if last_tid is None:
-        save_last_tid(latest_tid)
-        return
-
-    new_posts = [t for t in new_threads if t.tid > last_tid]
-    if not new_posts:
-        return
-
-    filtered_posts = [t for t in new_posts if not is_filtered(t.text or "")]
-    if not filtered_posts:
-        return
-
-    for t in filtered_posts:
-        print(format_post(t))
-
-    save_last_tid(latest_tid)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+示例命令：
+```bash
+python3 scripts/tieba_monitor.py --forum LOL台服 --filter 收一个,私聊,收个
+python3 scripts/tieba_monitor.py --forum 原神 --filter 收一个,私聊
 ```
 
 ### 第三步：创建 Cronjob
 
 使用 `cronjob` 工具创建定时任务：
 
-- **script**: `tieba_{forum_name}.py`（路径相对于 `~/./scripts/`）
+- **script**: `scripts/tieba_monitor.py`
+- **prompt**（供 no_agent=false 时用）：
+  ```
+  运行 /opt/data/scripts/tieba_monitor.py --forum {forum_name} --filter {filterout_keywords}
+  ```
 - **schedule**: 用户提供的 schedule，默认 `37 10,22 * * *`
 - **deliver**: `origin`
 - **no_agent**: `true`
@@ -135,7 +72,7 @@ job name 格式：`{forum_name}贴吧监控`
 ### 第四步：确认
 
 告诉用户：
-- 脚本路径：`/opt/data/scripts/tieba_{forum_name}.py`
+- 脚本路径：`Hermes-tieba-monitor-skill/scripts/tieba_monitor.py`
 - cron 表达式及含义
 - 已配置的过滤关键词数量
 - job_id（用于后续管理）
